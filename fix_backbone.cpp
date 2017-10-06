@@ -9,9 +9,10 @@
    Last Update: 03/23/2011
    ------------------------------------------------------------------------- */
 
-#include "math.h"
-#include "string.h"
-#include "stdlib.h"
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "fix_backbone.h"
 #include "atom.h"
 #include "update.h"
@@ -24,11 +25,10 @@
 #include "group.h"
 #include "domain.h"
 #include "memory.h"
+#include "atom_vec_awsemmd.h"
 #include "comm.h"
 #include "timer.h"
 #include <fstream>
-#include <stdio.h>
-#include <stdlib.h>
 #include <time.h>
 
 using std::ifstream;
@@ -118,6 +118,9 @@ FixBackbone::FixBackbone(LAMMPS *lmp, int narg, char **arg) :
   an = 0.4831806; bn = 0.7032820; cn = -0.1864262;
   ap = 0.4436538; bp = 0.2352006; cp = 0.3211455;
   ah = 0.8409657; bh = 0.8929599; ch = -0.7338894;
+  
+  // Default value for fm_sigma_exp
+  fm_sigma_exp = 0.15;
 
   n_wells = 0;
   n_helix_wells = 0;
@@ -773,13 +776,15 @@ inline void FixBackbone::Construct_Computational_Arrays()
   int nlocal = atom->nlocal;
   int nall = atom->nlocal + atom->nghost;
   int *mol_tag = atom->molecule;
-  int *res_tag = atom->residue;
-	
+  int *res_tag = avec->residue;
 
+	
   int i;
   for (i=0; i<n; ++i){
   	res_no_l[i] =-1;
   }
+
+//  printf("proc: %d, n: %d\n", comm->me, n);
 
   // Creating index arrays for Alpha_Carbons, Beta_Atoms and Oxygens
   nn = 0;
@@ -825,6 +830,8 @@ inline void FixBackbone::Construct_Computational_Arrays()
     last = amin;
     nn++;
   }
+
+//  printf("proc: %d, nn: %d\n", comm->me, nn);
 
   for (i = 0; i < nn; ++i) {
     chain_no[i] = -1;
@@ -872,6 +879,10 @@ inline void FixBackbone::Construct_Computational_Arrays()
       error->all(FLERR,"Missing neighbor atoms in fix backbone (Code 004)");
     }
   }
+
+/*  for (i = 0; i < nn; ++i) {
+    printf("proc: %d Ca: %d Cb: %d O: %d Res#: %d Chain# %d ResI: %d\n", comm->me, alpha_carbons[i], beta_atoms[i], oxygens[i], res_no[i], chain_no[i], res_info[i]);
+  }*/
 	
   /*	if (ntimestep==0) {
 	for (i = 0; i < nn; ++i) {
@@ -978,6 +989,9 @@ int FixBackbone::setmask()
 
 void FixBackbone::init()
 {
+  avec = (AtomVecAWSEM *) atom->style_match("awsemmd");
+  if (!avec) error->all(FLERR,"Fix backbone requires atom style awsemmd");
+
   if (strstr(update->integrate_style,"respa"))
     nlevels_respa = ((Respa *) update->integrate)->nlevels;
 	
@@ -1016,6 +1030,15 @@ void FixBackbone::min_setup(int vflag)
 {
   pre_force(vflag);
 }
+
+/* ---------------------------------------------------------------------- */
+
+void FixBackbone::setup_pre_force(int vflag)
+{
+  Construct_Computational_Arrays();
+  pre_force(vflag);
+}
+
 
 /* ---------------------------------------------------------------------- */
 
@@ -1191,7 +1214,7 @@ void FixBackbone::compute_chain_potential(int i)
   int ip1, im1; 
   int im1_resno;
   // N(i) - Cb(i)
-  int *res_tag = atom->residue;
+  int *res_tag = avec->residue;
   if (!isFirst(i) && se[i_resno]!='G') {
     im1 = res_no_l[i_resno-1];
     im1_resno = res_no[im1]-1;
@@ -2705,7 +2728,7 @@ void FixBackbone::compute_amh_go_model()
   // loop over neighbors of my atoms
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
-    ires = atom->residue[i];
+    ires = avec->residue[i];
     imol = atom->molecule[i];
     ires_type = se_map[se[ires-1]-'A'];
     
@@ -2729,7 +2752,7 @@ void FixBackbone::compute_amh_go_model()
       Ei = 0.0;
       for (jj = 0; jj < jnum; jj++) {
         j = jlist[jj];
-        jres = atom->residue[j];
+        jres = avec->residue[j];
         jmol = atom->molecule[j];
         jres_type = se_map[se[jres-1]-'A'];
         
@@ -3677,11 +3700,12 @@ void FixBackbone::compute_backbone()
 		
     i_resno=res_no[i]-1;
     int im1 = res_no_l[i_resno-1];
-    if (i_resno>0 && !isFirst(i) && (res_info[i]==LOCAL || res_info[i]==GHOST))	{
-      if (im1==-1){
+    if (im1!=-1 && i_resno>0 && !isFirst(i) && (res_info[i]==LOCAL || res_info[i]==GHOST))	{
+/*      if (im1==-1){
+        printf("proc: %d i: %d i_resno: %d im1: %d isF: %d resI: %d\n", comm->me, i, i_resno, im1, isFirst(i), res_info[i]);
         fprintf(stderr,"Warning: In compute_backbone(), likely the bond was stretched for too long, im1=%d on processor %d, Exit!\n", im1, comm->me);
       	//error->all(FLERR,"In compute_backbone, im1==-1!");
-      }	
+      }	*/
       if (res_info[im1]==LOCAL || res_info[im1]==GHOST){
 	      xn[i][0] = an*xca[im1][0] + bn*xca[i][0] + cn*xo[im1][0];
 	      xn[i][1] = an*xca[im1][1] + bn*xca[i][1] + cn*xo[im1][1];
@@ -3696,11 +3720,12 @@ void FixBackbone::compute_backbone()
       xh[i][0] = xh[i][1] = xh[i][2] = 0.0;
     }
 		
-    if (i_resno>0 && !isFirst(i) && (res_info[i]==LOCAL || res_info[i]==GHOST)) {
-      if (im1==-1){        
+    if (im1!=-1 && i_resno>0 && !isFirst(i) && (res_info[i]==LOCAL || res_info[i]==GHOST)) {
+/*      if (im1==-1){        
+        printf("proc: %d i: %d i_resno: %d im1: %d isF: %d resI: %d\n", comm->me, i, i_resno, im1, isFirst(i), res_info[i]);
 	fprintf(stderr,"Warning: In compute_backbone(), likely the bond was stretched for too long, im1=%d on processor %d, Exit!\n", im1, comm->me);
       	//error->all(FLERR,"In compute_backbone, im1==-1!");
-      }	
+      }	*/
       if ( (res_info[im1]==LOCAL || res_info[im1]==GHOST) ) {
 	xcp[im1][0] = ap*xca[im1][0] + bp*xca[i][0] + cp*xo[im1][0];
 	xcp[im1][1] = ap*xca[im1][1] + bp*xca[i][1] + cp*xo[im1][1];
@@ -3711,11 +3736,11 @@ void FixBackbone::compute_backbone()
     }
 
   }
-  if(nn<=0){
+/*  if(nn<=0){
     	fprintf(stderr, "nn = %d rank = %d\n", nn, comm->me);    	
   	error->all(FLERR,"In compute_backbone, nn <=0 on one processor!");
-  }
-  xcp[nn-1][0] = xcp[nn-1][1] = xcp[nn-1][2] = 0.0;
+  }*/
+  if (nn>0) xcp[nn-1][0] = xcp[nn-1][1] = xcp[nn-1][2] = 0.0;
 
  // Debug  
 /* for (i=0;i<atom->nlocal;i++) {

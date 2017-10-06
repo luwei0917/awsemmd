@@ -10,10 +10,10 @@ Last Update: 05/01/2012
 ------------------------------------------------------------------------- */
 
 #include "ctype.h"
-#include "math.h"
-#include "stdio.h"
-#include "stdlib.h"
-#include "string.h"
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "pair_ex_gauss_coul_cut.h"
 #include "atom.h"
 #include "comm.h"
@@ -201,9 +201,9 @@ void PairExGaussCoulCut::settings(int narg, char **arg)
 {
   if (narg < 1 || narg > 2) error->all(FLERR,"Pair_style Ex/Gauss/Coul/Cut: Illegal pair_style command");
 
-  cut_ex_global = force->numeric(arg[0]);
+  cut_ex_global = force->numeric(FLERR,arg[0]);
   if (narg == 1) cut_coul_global = cut_ex_global;
-  else cut_coul_global = force->numeric(arg[1]);
+  else cut_coul_global = force->numeric(FLERR,arg[1]);
 
   // reset cutoffs that have been explicitly set
 
@@ -232,8 +232,8 @@ void PairExGaussCoulCut::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  force->bounds(arg[0],atom->ntypes,ilo,ihi);
-  force->bounds(arg[1],atom->ntypes,jlo,jhi);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
   
   int len = strlen(arg[2]) + 1;
   parfile = new char[len];
@@ -241,8 +241,8 @@ void PairExGaussCoulCut::coeff(int narg, char **arg)
   
   double cut_ex_one = cut_ex_global;
   double cut_coul_one = cut_coul_global;
-  if (narg >= 4) cut_coul_one = cut_ex_one = force->numeric(arg[3]);
-  if (narg == 5) cut_coul_one = force->numeric(arg[4]);
+  if (narg >= 4) cut_coul_one = cut_ex_one = force->numeric(FLERR,arg[3]);
+  if (narg == 5) cut_coul_one = force->numeric(FLERR,arg[4]);
 
   int count = 0;
   for (int i = ilo; i <= ihi; i++) {
@@ -338,8 +338,8 @@ void PairExGaussCoulCut::read_parameters()
 		if (narg!=3) error->all(FLERR,"Pair_style Ex/Gauss/Coul/Cut: Wrong format in coefficient file (Gauss coeff).");
 		
 		if (file_state==FS_GAUSS) {
-			force->bounds(arg[0],atom->ntypes,ilo,ihi);
-        	force->bounds(arg[1],atom->ntypes,jlo,jhi);
+			force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+        	force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
         	numG = atoi(arg[2]);
         	iG = 0;
 
@@ -408,8 +408,8 @@ void PairExGaussCoulCut::read_parameters()
 		}
 		if (narg!=4) error->all(FLERR,"Pair_style Ex/Gauss/Coul/Cut: Wrong format in coefficient file (Excluded Volume coeff).");
     	
-    	force->bounds(arg[0],atom->ntypes,ilo,ihi);
-        force->bounds(arg[1],atom->ntypes,jlo,jhi);
+    	force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+        force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
         
         A_val = atof(arg[2]);
         l_val = atof(arg[3]);
@@ -451,7 +451,7 @@ void PairExGaussCoulCut::init_style()
   if (!atom->q_flag)
     error->all(FLERR,"Pair style ex/gauss/coul/cut requires atom attribute q");
 
-  int irequest = neighbor->request(this);
+  neighbor->request(this,instance_me);
 
   el_flag = false;
 }
